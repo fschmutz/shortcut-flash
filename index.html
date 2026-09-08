@@ -113,6 +113,13 @@
         <button type="button" class="chip" data-hands="keyboard" id="handsKeyboard" aria-pressed="true">Vrai clavier</button>
       </div>
       <p class="hands-chip" id="handsChip">Clavier réel — appuie dessus</p>
+      <p class="eyebrow spaced" id="modeEyebrow">Comment tu joues</p>
+      <div class="row-2 hands-row" id="modePick">
+        <button type="button" class="chip" data-mode="mix" id="modeMix" aria-pressed="true">Mélange</button>
+        <button type="button" class="chip" data-mode="typing" id="modeTyping" aria-pressed="false">Que des touches</button>
+      </div>
+      <p class="hint" id="modeHint">« Que des touches » : plus de questions à choix. Tu fais le vrai geste à chaque fois.</p>
+      <p class="hands-chip" id="modeChip">Mélange — appuie et choisis</p>
     </div>
     <button type="button" class="play-btn" id="toMap">C’EST PARTI</button>
   </section>
@@ -137,6 +144,7 @@
       <div class="hud-box"><div class="hud-label" id="lblTime">Temps</div><div class="hud-val time" id="time">90</div></div>
     </div>
     <p class="hands-chip live" id="playHandsChip">Clavier réel — appuie dessus</p>
+    <p class="hands-chip live dim" id="playModeChip">Mélange — appuie et choisis</p>
     <div class="question" id="qcard">
       <div class="q-tag" id="qtag">Défi 1 / 4</div>
       <div class="q-text" id="qtext"></div>

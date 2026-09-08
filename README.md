@@ -19,7 +19,7 @@
 
 </div>
 
-Borne d’arcade. Prénom Paloma, Windows / Mac / Linux, téléphone ou vrai clavier (on détecte, tu corriges). Campagne linéaire, quatre défis mélangés, un boss chronométré. Sur téléphone tu tapes les touches à l’écran. Rien n’est envoyé.
+Borne d’arcade. Prénom Paloma, Windows / Mac / Linux, téléphone ou vrai clavier (on détecte, tu corriges). Campagne linéaire, quatre défis mélangés, un boss chronométré. Mode « que des touches » : plus de QCM, tu fais le raccourci pour de vrai. Sur téléphone tu tapes les touches à l’écran. Rien n’est envoyé.
 
 Arcade cabinet. First name Paloma, Windows / Mac / Linux, phone or real keyboard (we detect, you override). Linear campaign, four shuffled challenges, a timed boss. On a phone you tap the keys on the screen. Nothing is uploaded.
 
@@ -55,7 +55,7 @@ Most “learn shortcuts” pages are adult cheat-sheets, pull Google Fonts, and 
 | 11 | Sécurité express | Safety express |
 | 12 | BOSS — Le Grand Mélange | BOSS — The Grand Mix |
 
-Four randomized challenges per mission (press / what-does / which-keys / true-false). Decoys from other missions. Copy words never repeat twice in a row. Screenshots and lock stay quiz — the OS would steal the keys. The boss is 10 items from missions 1–11, seed `Date.now()+name`.
+Four randomized challenges per mission (press / what-does / which-keys / true-false). Two modes: **Mixed** (on a real keyboard, 3 of 4 are a real press) and **Keys only** (no multiple choice at all — you do the move every time). Quiz answers are keyboard-driven too: 1–4 pick an answer, Enter submits a which-keys challenge. Decoys from other missions. Copy words never repeat twice in a row. Screenshots and lock stay quiz — the OS would steal the keys; so do Ctrl+T / Ctrl+W / Ctrl+Tab, which the browser refuses to let go of. The boss is 10 items from missions 1–11, seed `Date.now()+name`.
 
 ## Privacy
 

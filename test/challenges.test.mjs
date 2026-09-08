@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { matchKeydown, formatCombo, detectOS, eventFromChord, highlightKeys, isOsEaten, detectHands, isRealKeyboardEvent } from '../js/keys.js';
+import { matchKeydown, formatCombo, detectOS, eventFromChord, highlightKeys, isOsEaten, isBrowserEaten, isPressable, detectHands, isRealKeyboardEvent } from '../js/keys.js';
 import {
   shuffle,
   mulberry32,
@@ -14,8 +14,13 @@ import {
   allFacts,
   COPY_WORDS,
   allowedTypes,
+  typingTypesFor,
+  isTypable,
+  normalizeMode,
   TOUCH_TYPES,
-  KEYBOARD_TYPES
+  KEYBOARD_TYPES,
+  DO_TYPES,
+  MODES
 } from '../js/challenges.js';
 import { MISSIONS, regularMissions, bossPoolCovers } from '../js/missions.js';
 import { STR } from '../js/i18n.js';
@@ -170,23 +175,93 @@ test('decoys never equal the answer', () => {
   }
 });
 
-test('press challenges never use OS-eaten combos', () => {
-  for (const m of regularMissions()) {
-    for (let n = 1; n <= 8; n++) {
-      const chs = generateMissionChallenges(m.id, { os: 'win', lang: 'fr', now: n, name: 'Paloma' });
-      for (const ch of chs) {
-        if (ch.type === 'press' || ch.type === 'mouse') {
-          assert.equal(isOsEaten(ch.comboId), false, m.id + ' ' + ch.comboId);
+test('press challenges never use OS-eaten or browser-eaten combos', () => {
+  /* Ctrl+T / Ctrl+W / Ctrl+Tab cannot be preventDefault-ed: a real press
+     would open or close the game tab. They stay quiz / on-screen only. */
+  assert.equal(isBrowserEaten('closeTab'), true);
+  assert.equal(isBrowserEaten('newTab'), true);
+  assert.equal(isBrowserEaten('nextTab'), true);
+  assert.equal(isPressable('closeTab'), false);
+  assert.equal(isPressable('copy'), true);
+  assert.equal(isPressable('lock'), false);
+
+  for (const mode of MODES) {
+    for (const hands of ['keyboard', 'touch']) {
+      for (const m of regularMissions()) {
+        for (let n = 1; n <= 8; n++) {
+          const chs = generateMissionChallenges(m.id, { os: 'win', lang: 'fr', now: n, name: 'Paloma', hands, mode });
+          for (const ch of chs) {
+            if (ch.type === 'press') {
+              assert.equal(isPressable(ch.comboId), true, m.id + ' ' + mode + ' ' + ch.comboId);
+            }
+          }
+        }
+      }
+      for (let n = 1; n <= 12; n++) {
+        const g = generateBossGauntlet({ os: 'mac', lang: 'fr', name: 'Paloma', now: n * 17, hands, mode });
+        for (const ch of g) {
+          if (ch.type === 'press') assert.equal(isPressable(ch.comboId), true, ch.comboId);
         }
       }
     }
   }
-  for (let n = 1; n <= 12; n++) {
-    const g = generateBossGauntlet({ os: 'mac', lang: 'fr', name: 'Paloma', now: n * 17 });
-    for (const ch of g) {
-      if (ch.type === 'press') assert.equal(isOsEaten(ch.comboId), false, ch.comboId);
+});
+
+test('keyboard mix mode is press-first, not a quiz show', () => {
+  let press = 0, total = 0;
+  for (let n = 1; n <= 40; n++) {
+    const chs = generateMissionChallenges('copy', { os: 'win', lang: 'fr', now: n * 31, name: 'Paloma', hands: 'keyboard' });
+    for (const ch of chs) { total += 1; if (ch.type === 'press') press += 1; }
+  }
+  assert.equal(total, 160);
+  assert.equal(press / total >= 0.7, true, 'press share on a pressable mission: ' + (press / total));
+});
+
+test('typing mode never asks a quiz when the fact can be done', () => {
+  assert.equal(normalizeMode('typing'), 'typing');
+  assert.equal(normalizeMode('nope'), 'mix');
+  assert.equal(normalizeMode(undefined), 'mix');
+
+  for (const fact of allFacts()) {
+    for (const hands of ['keyboard', 'touch']) {
+      const first = typingTypesFor(fact, hands)[0];
+      if (isTypable(fact, hands)) assert.ok(DO_TYPES.includes(first), fact.id + ' ' + first);
     }
   }
+
+  for (const hands of ['keyboard', 'touch']) {
+    for (const m of regularMissions()) {
+      for (let n = 1; n <= 10; n++) {
+        const chs = generateMissionChallenges(m.id, { os: 'win', lang: 'fr', now: n * 13, name: 'Paloma', hands, mode: 'typing' });
+        assert.equal(chs.length, 4, m.id);
+        for (const ch of chs) {
+          assert.ok(DO_TYPES.includes(ch.type), m.id + ' ' + hands + ' got ' + ch.type);
+        }
+      }
+    }
+    for (let n = 1; n <= 10; n++) {
+      const g = generateBossGauntlet({ os: 'linux', lang: 'en', name: 'Mia', now: n * 7, hands, mode: 'typing' });
+      assert.equal(g.length, 10);
+      for (const ch of g) assert.ok(DO_TYPES.includes(ch.type), 'boss typing ' + ch.type);
+    }
+  }
+});
+
+test('typing mode on a real keyboard prefers real presses over on-screen keys', () => {
+  let press = 0, keys = 0, mouse = 0;
+  for (let n = 1; n <= 20; n++) {
+    const g = generateBossGauntlet({ os: 'win', lang: 'fr', name: 'Paloma', now: n * 101, hands: 'keyboard', mode: 'typing' });
+    for (const ch of g) {
+      if (ch.type === 'press') press += 1;
+      else if (ch.type === 'keys') keys += 1;
+      else if (ch.type === 'mouse') mouse += 1;
+    }
+  }
+  assert.ok(press > keys, `press ${press} should beat on-screen keys ${keys}`);
+  assert.ok(mouse > 0, 'mouse gestures still show up');
+  /* touch cannot press: it taps the on-screen keyboard instead */
+  const touch = generateBossGauntlet({ os: 'win', lang: 'fr', name: 'Paloma', now: 5, hands: 'touch', mode: 'typing' });
+  for (const ch of touch) assert.notEqual(ch.type, 'press');
 });
 
 test('copy words never repeat twice in a row', () => {
@@ -279,9 +354,10 @@ test('20 seeded playthroughs of mission 1 + boss', () => {
     const hands = i % 2 === 0 ? 'touch' : 'keyboard';
     const os = ['win', 'mac', 'linux'][i % 3];
     const lang = i % 2 === 0 ? 'fr' : 'en';
+    const mode = i % 3 === 0 ? 'typing' : 'mix';
     const allowed = hands === 'touch' ? TOUCH_TYPES : KEYBOARD_TYPES;
-    const m1 = generateMissionChallenges('copy', { os, lang, name, now, hands });
-    const boss = generateBossGauntlet({ os, lang, name, now: now + 3, hands });
+    const m1 = generateMissionChallenges('copy', { os, lang, name, now, hands, mode });
+    const boss = generateBossGauntlet({ os, lang, name, now: now + 3, hands, mode });
     assert.equal(m1.length, 4, 'm1 length ' + i);
     assert.equal(boss.length, 10, 'boss length ' + i);
     for (const ch of [...m1, ...boss]) {
@@ -296,9 +372,10 @@ test('20 seeded playthroughs of mission 1 + boss', () => {
         for (const d of ch.decoys) assert.notEqual(d, ch.answer);
       }
       if (hands === 'touch') assert.notEqual(ch.type, 'press');
+      if (mode === 'typing') assert.ok(DO_TYPES.includes(ch.type), 'typing ' + ch.type);
     }
     const types = [...m1.map((c) => c.type), '|', ...boss.map((c) => c.type)].join(',');
-    console.log(`run ${String(i + 1).padStart(2, '0')} ${name} ${os} ${hands} ${lang} ${types} OK`);
+    console.log(`run ${String(i + 1).padStart(2, '0')} ${name} ${os} ${hands} ${mode} ${lang} ${types} OK`);
     pass += 1;
   }
   assert.equal(pass, 20);

@@ -97,6 +97,7 @@ body::before{
   border-radius:99px;padding:8px 14px;font-size:13px;font-weight:600;line-height:1.3;
 }
 .hands-chip.live{margin:0 auto 10px}
+.hands-chip.dim{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.18);color:var(--cream);opacity:.85}
 
 .chip{
   font-family:inherit;font-size:15px;font-weight:600;color:var(--cream);
@@ -165,7 +166,17 @@ body::before{
 @keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-9px)}40%{transform:translateX(9px)}60%{transform:translateX(-6px)}80%{transform:translateX(6px)}}
 
 .answers{display:flex;flex-direction:column;gap:8px;margin-top:8px}
-.answers .ans{text-align:left;padding:12px 14px}
+.answers .ans{text-align:left;padding:12px 14px;display:flex;align-items:center;gap:10px}
+.answers .ans.sel{background:rgba(108,59,255,.34);border-color:var(--indigo)}
+
+/* the digit you actually press to pick this answer */
+.kbd-badge{
+  flex:0 0 auto;display:inline-grid;place-items:center;min-width:26px;height:26px;padding:0 6px;
+  font-family:'DM Mono',ui-monospace,monospace;font-size:13px;font-weight:500;
+  background:rgba(200,255,46,.16);border:2px solid var(--lime);color:var(--lime);border-radius:8px;
+}
+#tf .chip .kbd-badge{margin-right:8px}
+#tf .chip{display:inline-flex;align-items:center;justify-content:center}
 
 .kb{margin-top:10px;display:flex;flex-direction:column;gap:6px}
 .kb-row{display:flex;flex-wrap:wrap;gap:5px;justify-content:center}

@@ -1,7 +1,7 @@
 /** Challenge generators. Browser + Node. No DOM. */
 
 import { MISSIONS, allFacts, factsFor, regularMissions } from './missions.js';
-import { formatCombo, fillOs, isOsEaten, highlightKeys, COMBOS, displayKey, MOD } from './keys.js';
+import { formatCombo, fillOs, isOsEaten, isPressable, highlightKeys, COMBOS, displayKey, MOD } from './keys.js';
 
 export const COPY_WORDS = {
   fr: ['banane', 'dragon', 'fusée', 'chat', 'pizza', 'étoile', 'robot', 'nuage', 'cactus', 'licorne', 'volcan', 'komodo'],
@@ -10,6 +10,11 @@ export const COPY_WORDS = {
 
 export const TOUCH_TYPES = ['keys', 'what', 'tf', 'mouse'];
 export const KEYBOARD_TYPES = ['keys', 'what', 'tf', 'mouse', 'press'];
+
+/** 'mix' = presses + quiz. 'typing' = never a quiz, always do the real gesture. */
+export const MODES = ['mix', 'typing'];
+/** Types that make the player DO the thing instead of picking a sentence. */
+export const DO_TYPES = ['press', 'keys', 'mouse'];
 
 export function mulberry32(seed) {
   let a = seed >>> 0;
@@ -63,7 +68,7 @@ function loc(obj, lang) {
 
 function canPress(fact) {
   if (fact.pressOk === false) return false;
-  if (fact.comboId && isOsEaten(fact.comboId)) return false;
+  if (fact.comboId && !isPressable(fact.comboId)) return false;
   if (!fact.comboId && !fact.mouse) return false;
   return true;
 }
@@ -74,6 +79,10 @@ function canKeys(fact) {
 
 export function normalizeHands(hands) {
   return hands === 'touch' ? 'touch' : 'keyboard';
+}
+
+export function normalizeMode(mode) {
+  return mode === 'typing' ? 'typing' : 'mix';
 }
 
 /**
@@ -243,81 +252,113 @@ function buildPress(fact, os, lang, copyWord) {
   };
 }
 
-export function buildChallenge(fact, type, { os, lang, rng, lastCopy, hands } = {}) {
-  const mode = normalizeHands(hands);
-  const allowed = allowedTypes(fact, mode);
-  let t = type || pick(allowed, rng);
-  if (t === 'press' && mode === 'touch') t = allowed.includes('keys') ? 'keys' : allowed[0];
+export function buildChallenge(fact, type, { os, lang, rng, lastCopy, hands, mode } = {}) {
+  const hd = normalizeHands(hands);
+  const md = normalizeMode(mode);
+  const allowed = allowedTypes(fact, hd);
+  let t = type || pick(md === 'typing' ? typingTypesFor(fact, hd) : allowed, rng);
+  if (t === 'press' && hd === 'touch') t = allowed.includes('keys') ? 'keys' : allowed[0];
   if (!allowed.includes(t)) t = allowed.includes('what') ? 'what' : allowed[0];
   if (t === 'what') return buildWhat(fact, os, lang, rng);
   if (t === 'tf') return buildTf(fact, os, lang, rng);
   if (t === 'keys' && canKeys(fact)) return buildKeys(fact, os, lang);
   if ((t === 'press' || t === 'mouse') && canPress(fact)) {
-    if (t === 'press' && mode === 'touch') return buildWhat(fact, os, lang, rng);
+    if (t === 'press' && hd === 'touch') return buildWhat(fact, os, lang, rng);
     const word = fact.copyWord ? pickCopyWord(rng, lang, lastCopy) : null;
     return buildPress(fact, os, lang, word);
   }
   return buildWhat(fact, os, lang, rng);
 }
 
-function typeCycleFor(hands, rng) {
-  if (normalizeHands(hands) === 'touch') return shuffle(['what', 'tf', 'keys', 'mouse'], rng);
-  return shuffle(['what', 'tf', 'keys', 'press'], rng);
+/** Types that make the player DO the gesture, best first, for this fact. */
+export function typingTypesFor(fact, hands) {
+  const allowed = allowedTypes(fact, normalizeHands(hands));
+  const out = DO_TYPES.filter((t) => allowed.includes(t));
+  return out.length ? out : ['what'];
 }
 
-function resolveType(fact, wanted, hands) {
-  const allowed = allowedTypes(fact, hands);
-  let type = wanted;
-  if (!allowed.includes(type)) {
-    if (type === 'press' && allowed.includes('mouse')) type = 'mouse';
-    else if (type === 'press' && allowed.includes('keys')) type = 'keys';
-    else type = allowed.includes('what') ? 'what' : allowed[0];
-  }
-  return type;
+/** A fact you can DO: real press, on-screen keys, or a mouse gesture. */
+export function isTypable(fact, hands) {
+  return typingTypesFor(fact, hands)[0] !== 'what';
 }
 
 /**
- * 4 challenges from a mission pool. Types shuffled.
- * `lastCopy` avoids the same copy-word sentence twice in a row.
- * `hands` = 'touch' | 'keyboard' — touch never emits press.
+ * Type bag per 4 challenges.
+ * touch mix     -> what / tf / keys / mouse
+ * keyboard mix  -> 3 real presses + 1 quiz. Pressing IS the lesson.
+ * typing        -> handled per fact by `typingTypesFor`, never a quiz.
  */
-export function generateMissionChallenges(missionId, opts = {}) {
+function typeCycleFor(hands, rng, mode) {
+  if (normalizeMode(mode) === 'typing') return null;
+  if (normalizeHands(hands) === 'touch') return shuffle(['what', 'tf', 'keys', 'mouse'], rng);
+  return shuffle(['press', 'press', 'press', pick(['what', 'tf'], rng)], rng);
+}
+
+/**
+ * Keep the challenge as close to `wanted` as the fact allows.
+ * A press the OS or the browser eats degrades to the on-screen keyboard,
+ * never straight to a quiz — index alternation keeps a full mission varied.
+ */
+function resolveType(fact, wanted, hands, i = 0) {
+  const allowed = allowedTypes(fact, hands);
+  if (allowed.includes(wanted)) return wanted;
+  if (wanted === 'press') {
+    if (allowed.includes('mouse')) return 'mouse';
+    const chain = i % 2 === 0 ? ['keys', 'what', 'tf'] : ['what', 'keys', 'tf'];
+    for (const t of chain) if (allowed.includes(t)) return t;
+  }
+  if (wanted === 'keys' && allowed.includes('mouse')) return 'mouse';
+  return allowed.includes('what') ? 'what' : allowed[0];
+}
+
+/** Typing mode: prefer facts you can actually do; fall back if a mission has none. */
+function poolFor(facts, hands, mode, rng, want) {
+  const shuffled = shuffle(facts, rng);
+  if (normalizeMode(mode) !== 'typing') return shuffled.slice(0, want);
+  const typable = shuffled.filter((f) => isTypable(f, hands));
+  if (!typable.length) return shuffled.slice(0, want);
+  const out = [];
+  let i = 0;
+  while (out.length < want) {
+    out.push(typable[i % typable.length]);
+    i += 1;
+  }
+  return out;
+}
+
+function buildQueue(facts, want, opts) {
   const os = opts.os || 'win';
   const lang = opts.lang === 'en' ? 'en' : 'fr';
   const hands = normalizeHands(opts.hands);
+  const mode = normalizeMode(opts.mode);
   const rng = opts.rng || mulberry32(seedFrom(opts.name, opts.now));
+  const picked = poolFor(facts, hands, mode, rng, want);
+  const typeCycle = typeCycleFor(hands, rng, mode);
+  let lastCopy = opts.lastCopy || null;
+  return picked.map((fact, i) => {
+    const wanted = typeCycle ? typeCycle[i % typeCycle.length] : typingTypesFor(fact, hands)[0];
+    const type = resolveType(fact, wanted, hands, i);
+    const ch = buildChallenge(fact, type, { os, lang, rng, lastCopy, hands, mode });
+    if (ch.copyWord) lastCopy = ch.copyWord;
+    return ch;
+  });
+}
+
+/**
+ * 4 challenges from a mission pool.
+ * `lastCopy` avoids the same copy-word sentence twice in a row.
+ * `hands` = 'touch' | 'keyboard' — touch never emits press.
+ * `mode` = 'mix' | 'typing' — typing never emits what/tf when the fact is doable.
+ */
+export function generateMissionChallenges(missionId, opts = {}) {
   const facts = factsFor(missionId);
   if (facts.length < 4) throw new Error('mission ' + missionId + ' needs ≥4 templates');
-  const picked = shuffle(facts, rng).slice(0, 4);
-  const typeCycle = typeCycleFor(hands, rng);
-  let lastCopy = opts.lastCopy || null;
-  const out = [];
-  picked.forEach((fact, i) => {
-    const type = resolveType(fact, typeCycle[i % typeCycle.length], hands);
-    const ch = buildChallenge(fact, type, { os, lang, rng, lastCopy, hands });
-    if (ch.copyWord) lastCopy = ch.copyWord;
-    out.push(ch);
-  });
-  return out;
+  return buildQueue(facts, 4, opts);
 }
 
 /** 10 items from missions 1–11. Seed = Date.now()+name. No two runs the same. */
 export function generateBossGauntlet(opts = {}) {
-  const os = opts.os || 'win';
-  const lang = opts.lang === 'en' ? 'en' : 'fr';
-  const hands = normalizeHands(opts.hands);
-  const now = opts.now ?? Date.now();
-  const rng = opts.rng || mulberry32(seedFrom(opts.name, now));
-  const pool = allFacts();
-  const picked = shuffle(pool, rng).slice(0, 10);
-  const typeCycle = typeCycleFor(hands, rng);
-  let lastCopy = opts.lastCopy || null;
-  return picked.map((fact, i) => {
-    const type = resolveType(fact, typeCycle[i % typeCycle.length], hands);
-    const ch = buildChallenge(fact, type, { os, lang, rng, lastCopy, hands });
-    if (ch.copyWord) lastCopy = ch.copyWord;
-    return ch;
-  });
+  return buildQueue(allFacts(), 10, { ...opts, now: opts.now ?? Date.now() });
 }
 
 export function missionTemplateCounts() {

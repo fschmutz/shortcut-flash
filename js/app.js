@@ -14,6 +14,7 @@ const BOSS_SECS = 90;
 let lang = 'fr';
 let os = 'win';
 let hands = 'keyboard';
+let mode = 'mix';
 let keyboardSeen = false;
 let handsForced = false;
 let player = { name: 'Paloma' };
@@ -65,13 +66,14 @@ function loadPersisted() {
     if (s.hands === 'touch' || s.hands === 'keyboard') {
       if (handsForced) hands = s.hands;
     }
+    if (s.mode === 'typing' || s.mode === 'mix') mode = s.mode;
   } catch { /* keep defaults */ }
 }
 
 function save() {
   try {
     localStorage.setItem(LS, JSON.stringify({
-      name: player.name, os, lang, hands, handsForced, keyboardSeen,
+      name: player.name, os, lang, hands, mode, handsForced, keyboardSeen,
       beaten, boss: bossClear, lastCopy
     }));
   } catch { /* quota */ }
@@ -144,6 +146,15 @@ function paintHands() {
   if ($('handsEyebrow')) $('handsEyebrow').textContent = T.sitHandsHint;
 }
 
+function paintMode() {
+  const T = S();
+  const chip = mode === 'typing' ? T.modeChipTyping : T.modeChipMix;
+  if ($('modeChip')) $('modeChip').textContent = chip;
+  if ($('playModeChip')) $('playModeChip').textContent = chip;
+  if ($('modeMix')) $('modeMix').setAttribute('aria-pressed', String(mode === 'mix'));
+  if ($('modeTyping')) $('modeTyping').setAttribute('aria-pressed', String(mode === 'typing'));
+}
+
 function applyI18n() {
   const T = S();
   document.documentElement.lang = T.htmlLang;
@@ -170,6 +181,10 @@ function applyI18n() {
   $('osLinux').textContent = T.osLinux;
   $('handsTouch').textContent = T.handsTouch;
   $('handsKeyboard').textContent = T.handsKeyboard;
+  $('modeEyebrow').textContent = T.modeEyebrow;
+  $('modeMix').textContent = T.modeMix;
+  $('modeTyping').textContent = T.modeTyping;
+  $('modeHint').textContent = T.modeHint;
   $('toMap').textContent = T.go;
   $('mapEyebrow').textContent = T.mapEyebrow;
   $('changePlayer').textContent = T.changePlayer;
@@ -189,6 +204,7 @@ function applyI18n() {
   $('privacyLine').textContent = T.privacy;
   paintOs();
   paintHands();
+  paintMode();
   if (!$('map').classList.contains('hide')) paintMap();
 }
 
@@ -209,6 +225,7 @@ function restorePlayerUI() {
   $('pname').value = player.name;
   paintOs();
   paintHands();
+  paintMode();
 }
 
 function setHands(next, forced) {
@@ -218,6 +235,12 @@ function setHands(next, forced) {
   save();
   paintHands();
   if (state.running) paintChallenge();
+}
+
+function setMode(next) {
+  mode = next === 'typing' ? 'typing' : 'mix';
+  save();
+  paintMode();
 }
 
 /* ---------- map ---------- */
@@ -253,7 +276,10 @@ function paintMap() {
 function briefBody(m) {
   const raw = m.blurb[lang] || m.blurb.fr;
   const body = fillOs(raw, os).trim();
-  const doLine = hands === 'touch' ? S().briefDoTouch : S().briefDoKeyboard;
+  const T = S();
+  const doLine = mode === 'typing'
+    ? (hands === 'touch' ? T.briefDoTypingTouch : T.briefDoTypingKeyboard)
+    : (hands === 'touch' ? T.briefDoTouch : T.briefDoKeyboard);
   return body + ' ' + doLine;
 }
 
@@ -278,13 +304,23 @@ const state = {
   left: BOSS_SECS,
   timer: 0,
   picked: new Set(),
+  answerBtns: [],
   resolved: false
 };
 
 function current() { return state.queue[state.i] || null; }
 
+/** 1..4 from a bare digit press (top row or numpad). No modifiers allowed. */
+function digitOf(e) {
+  if (e.ctrlKey || e.altKey || e.metaKey) return 0;
+  const m = /^(?:Digit|Numpad)([1-9])$/.exec(e.code || '');
+  const raw = m ? m[1] : (e.key || '');
+  const n = Number(raw);
+  return n >= 1 && n <= 4 ? n : 0;
+}
+
 function genOpts() {
-  return { os, lang, name: player.name, now: Date.now(), lastCopy, hands };
+  return { os, lang, name: player.name, now: Date.now(), lastCopy, hands, mode };
 }
 
 function begin(id) {
@@ -361,13 +397,15 @@ function paintChallenge() {
   $('keysBar').classList.toggle('hide', !isKeys);
   $('mouseBox').classList.toggle('hide', !isMouse);
 
+  const kb = hands === 'keyboard';
+  paintTf(kb);
   if (isWhat) {
-    $('playHint').textContent = '';
-    paintAnswers(ch);
+    $('playHint').textContent = kb ? T.answerKeysHint : '';
+    paintAnswers(ch, kb);
   } else if (isTf) {
-    $('playHint').textContent = '';
+    $('playHint').textContent = kb ? T.tfKeysHint : '';
   } else if (isKeys) {
-    $('playHint').textContent = T.keysHint;
+    $('playHint').textContent = kb ? T.keysHintKb : T.keysHint;
     paintKeyboard(ch.keys || [], true);
   } else if (isPress) {
     $('playHint').textContent = T.pressHint;
@@ -378,17 +416,65 @@ function paintChallenge() {
   }
 }
 
-function paintAnswers(ch) {
+function paintAnswers(ch, numbered) {
   const box = $('answers');
   box.replaceChildren();
-  (ch.options || []).forEach((opt) => {
+  state.answerBtns = [];
+  (ch.options || []).forEach((opt, i) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'chip ans';
-    b.textContent = opt;
-    b.addEventListener('click', () => grade(opt === ch.answer, ch.answer));
+    if (numbered) {
+      const badge = document.createElement('span');
+      badge.className = 'kbd-badge';
+      badge.textContent = String(i + 1);
+      b.append(badge, document.createTextNode(opt));
+    } else {
+      b.textContent = opt;
+    }
+    b.addEventListener('click', () => pickAnswer(i));
     box.appendChild(b);
+    state.answerBtns.push(b);
   });
+}
+
+/** Vrai/Faux carry their key number when a real keyboard is in play. */
+function paintTf(numbered) {
+  const T = S();
+  const set = (el, n, label) => {
+    el.replaceChildren();
+    if (numbered) {
+      const badge = document.createElement('span');
+      badge.className = 'kbd-badge';
+      badge.textContent = String(n);
+      el.append(badge, document.createTextNode(label));
+    } else {
+      el.textContent = label;
+    }
+  };
+  set($('tfTrue'), 1, T.tfTrue);
+  set($('tfFalse'), 2, T.tfFalse);
+}
+
+function pickAnswer(i) {
+  const ch = current();
+  if (!ch || ch.type !== 'what' || state.resolved) return false;
+  const opt = (ch.options || [])[i];
+  if (opt === undefined) return false;
+  const btn = state.answerBtns?.[i];
+  if (btn) {
+    btn.classList.add('sel');
+    setTimeout(() => btn.classList.remove('sel'), 400);
+  }
+  grade(opt === ch.answer, ch.answer);
+  return true;
+}
+
+function pickTf(truth) {
+  const ch = current();
+  if (!ch || ch.type !== 'tf' || state.resolved) return false;
+  grade(ch.truth === truth, ch.truth ? S().tfTrue : S().tfFalse);
+  return true;
 }
 
 function paintMouse(ch) {
@@ -577,10 +663,26 @@ document.addEventListener('keydown', (e) => {
       paintHands();
     }
   }
-  if (!state.running || state.resolved) return;
+  if (!state.running || state.resolved || e.repeat) return;
   const ch = current();
-  if (!ch || ch.type !== 'press' || !ch.comboId) return;
-  if (e.repeat) return;
+  if (!ch) return;
+  if (ch.type === 'what' || ch.type === 'tf') {
+    const n = digitOf(e);
+    if (!n) return;
+    const took = ch.type === 'what' ? pickAnswer(n - 1) : (n <= 2 && pickTf(n === 1));
+    if (took) e.preventDefault();
+    return;
+  }
+  if (ch.type === 'keys') {
+    if (e.key === 'Enter') { e.preventDefault(); grade(keysMatch(ch.keys), ch.answer); }
+    else if (e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Escape') {
+      e.preventDefault();
+      state.picked = new Set();
+      paintKeyboard(ch.keys || [], true);
+    }
+    return;
+  }
+  if (ch.type !== 'press' || !ch.comboId) return;
   if (matchKeydown(e, ch.comboId, os)) {
     e.preventDefault();
     grade(true, ch.answer);
@@ -639,16 +741,8 @@ $('dragStar').addEventListener('pointerup', (e) => {
   grade(hit && moved, ch.answer);
 });
 
-$('tfTrue').addEventListener('click', () => {
-  const ch = current();
-  if (!ch || ch.type !== 'tf') return;
-  grade(ch.truth === true, ch.truth ? S().tfTrue : S().tfFalse);
-});
-$('tfFalse').addEventListener('click', () => {
-  const ch = current();
-  if (!ch || ch.type !== 'tf') return;
-  grade(ch.truth === false, ch.truth ? S().tfTrue : S().tfFalse);
-});
+$('tfTrue').addEventListener('click', () => pickTf(true));
+$('tfFalse').addEventListener('click', () => pickTf(false));
 $('keysOk').addEventListener('click', () => {
   const ch = current();
   if (!ch || ch.type !== 'keys') return;
@@ -672,6 +766,10 @@ $('oses').addEventListener('click', (e) => {
 $('handsPick').addEventListener('click', (e) => {
   const b = e.target.closest('.chip'); if (!b) return;
   setHands(b.dataset.hands, true);
+});
+$('modePick').addEventListener('click', (e) => {
+  const b = e.target.closest('.chip'); if (!b) return;
+  setMode(b.dataset.mode);
 });
 $('toMap').addEventListener('click', () => {
   const n = $('pname').value.trim();

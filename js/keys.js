@@ -23,6 +23,9 @@ export const MOD = {
  * Each entry: `key` plus per-OS modifier flags.
  * `alts[os]` = extra chords that also count (redo Y vs Shift+Z).
  * `osEaten` = the OS steals the keys; keep as quiz, never a press challenge.
+ * `browserEaten` = the BROWSER steals the keys and refuses preventDefault
+ *   (Ctrl+T / Ctrl+W / Ctrl+Tab). Pressing them for real kills the game tab,
+ *   so they are quiz-only too.
  */
 export const COMBOS = {
   copy: { key: 'c', win: { ctrl: true }, mac: { meta: true }, linux: { ctrl: true } },
@@ -42,9 +45,9 @@ export const COMBOS = {
   },
   selectAll: { key: 'a', win: { ctrl: true }, mac: { meta: true }, linux: { ctrl: true } },
   save: { key: 's', win: { ctrl: true }, mac: { meta: true }, linux: { ctrl: true } },
-  newTab: { key: 't', win: { ctrl: true }, mac: { meta: true }, linux: { ctrl: true } },
-  closeTab: { key: 'w', win: { ctrl: true }, mac: { meta: true }, linux: { ctrl: true } },
-  nextTab: { key: 'tab', win: { ctrl: true }, mac: { ctrl: true }, linux: { ctrl: true } },
+  newTab: { key: 't', win: { ctrl: true }, mac: { meta: true }, linux: { ctrl: true }, browserEaten: true },
+  closeTab: { key: 'w', win: { ctrl: true }, mac: { meta: true }, linux: { ctrl: true }, browserEaten: true },
+  nextTab: { key: 'tab', win: { ctrl: true }, mac: { ctrl: true }, linux: { ctrl: true }, browserEaten: true },
   find: { key: 'f', win: { ctrl: true }, mac: { meta: true }, linux: { ctrl: true } },
   zoomIn: {
     key: '=',
@@ -89,6 +92,17 @@ export const COMBOS = {
 
 export function isOsEaten(comboId) {
   return COMBOS[comboId]?.osEaten === true;
+}
+
+/** The browser keeps these for itself; a real press would close/leave the game. */
+export function isBrowserEaten(comboId) {
+  return COMBOS[comboId]?.browserEaten === true;
+}
+
+/** Safe to ask for a real key press in a browser tab? */
+export function isPressable(comboId) {
+  if (!COMBOS[comboId]) return false;
+  return !isOsEaten(comboId) && !isBrowserEaten(comboId);
 }
 
 export function fillOs(str, os) {

@@ -1,8 +1,9 @@
 /** Play 20 missions by answering correctly from the generated queue. */
-import { generateMissionChallenges, generateBossGauntlet, TOUCH_TYPES, KEYBOARD_TYPES } from '../js/challenges.js';
+import { generateMissionChallenges, generateBossGauntlet, TOUCH_TYPES, KEYBOARD_TYPES, DO_TYPES } from '../js/challenges.js';
 
-function play(ch, hands) {
+function play(ch, hands, mode) {
   const allowed = hands === 'touch' ? TOUCH_TYPES : KEYBOARD_TYPES;
+  if (mode === 'typing' && !DO_TYPES.includes(ch.type)) return false;
   if (!ch.prompt || !String(ch.prompt).trim()) return false;
   if (!allowed.includes(ch.type)) return false;
   if (ch.answer === undefined || ch.answer === null || ch.answer === '') return false;
@@ -27,14 +28,15 @@ for (let i = 0; i < 20; i++) {
   const name = names[i % names.length];
   const now = 1_700_000_000_000 + i * 97_331;
   const hands = i % 2 === 0 ? 'touch' : 'keyboard';
+  const mode = i % 3 === 0 ? 'typing' : 'mix';
   const os = ['win', 'mac', 'linux'][i % 3];
   const lang = i % 2 === 0 ? 'fr' : 'en';
-  const m1 = generateMissionChallenges('copy', { os, lang, name, now, hands });
-  const boss = generateBossGauntlet({ os, lang, name, now: now + 1, hands });
+  const m1 = generateMissionChallenges('copy', { os, lang, name, now, hands, mode });
+  const boss = generateBossGauntlet({ os, lang, name, now: now + 1, hands, mode });
   const queue = [...m1, ...boss];
-  const ok = queue.every((ch) => play(ch, hands));
+  const ok = queue.every((ch) => play(ch, hands, mode));
   const types = [...m1.map((c) => c.type), '|', ...boss.map((c) => c.type)].join(',');
-  console.log(`sim ${String(i + 1).padStart(2, '0')} ${ok ? 'PASS' : 'FAIL'} ${name} ${os} ${hands} ${lang} ${types}`);
+  console.log(`sim ${String(i + 1).padStart(2, '0')} ${ok ? 'PASS' : 'FAIL'} ${name} ${os} ${hands} ${mode} ${lang} ${types}`);
   if (ok) pass += 1;
 }
 console.log(`RESULT ${pass}/20`);
